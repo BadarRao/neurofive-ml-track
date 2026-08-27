@@ -1,10 +1,17 @@
 # NeuroFive ML Track
 
-Machine learning internship track with NeuroFive Solutions. Ten tasks taking a complete workflow from exploratory data analysis through model evaluation, ensembles, imbalanced data handling, and deployment as a live web application.
+Machine learning internship track with NeuroFive Solutions. Ten foundation tasks covering the full workflow from exploratory data analysis through model evaluation, ensembles, and imbalanced data handling, followed by a self directed capstone taken from raw data to a deployed product.
 
 Every result in this README comes from actually running the notebooks. No metric is estimated.
 
-**Live app:** _coming soon, deployment in progress_
+## Live Apps
+
+| App | Description | Link |
+|---|---|---|
+| Air Quality Forecaster | Capstone. Predicts PM2.5 concentration from weather conditions | _deployment in progress_ |
+| Titanic Survival Predictor | Task 10. Predicts survival from passenger details | https://badarrao-titanic-predictor.streamlit.app/ |
+
+Both are hosted on Streamlit Community Cloud's free tier, which sleeps after 12 hours without traffic. If you see a sleep screen, click "Yes, get this app back up!" and it loads in about 30 seconds.
 
 ---
 
@@ -12,6 +19,8 @@ Every result in this README comes from actually running the notebooks. No metric
 
 ```text
 neurofive-ml-track/
+│
+├── Capstone_Air_Quality_Prediction.ipynb
 │
 ├── Task_01_Titanic_EDA.ipynb
 ├── Task_02_Titanic_Data_Cleaning_Visualization.ipynb
@@ -24,18 +33,144 @@ neurofive-ml-track/
 ├── Task_09_Imbalanced_Data_Fraud_Detection.ipynb
 ├── Task_10_Model_Deployment_Streamlit.ipynb
 │
-├── app.py                    # Streamlit web application
-├── titanic_pipeline.joblib   # Trained model artifact
-├── requirements.txt          # Pinned dependencies for deployment
+├── capstone_app.py           # Capstone Streamlit application
+├── aqi_model.joblib          # Capstone trained model
+├── app.py                    # Task 10 Streamlit application
+├── titanic_pipeline.joblib   # Task 10 trained model
+├── requirements.txt          # Pinned dependencies, shared by both apps
 │
 ├── train.csv                                 # Titanic dataset
 ├── WA_Fn-UseC_-Telco-Customer-Churn.csv      # Telco churn dataset
+│
+├── CASE_STUDY.md             # Capstone case study writeup
 └── README.md
 ```
 
 ## Tech Stack
 
 Python, pandas, NumPy, scikit-learn, XGBoost, imbalanced-learn, Matplotlib, seaborn, Streamlit, joblib. All notebooks are written for Google Colab.
+
+---
+
+## Capstone: Air Quality Forecaster
+
+**Notebook:** `Capstone_Air_Quality_Prediction.ipynb` | **App:** `capstone_app.py` | **Case study:** [`CASE_STUDY.md`](CASE_STUDY.md)
+
+**Live app:** _deployment in progress_
+
+A self directed project taken from raw data to a deployed product, chosen independently rather than assigned.
+
+### Problem Statement
+
+Fine particulate matter (PM2.5) is the air pollutant most strongly linked to human harm. The particles measure under 2.5 micrometres across, small enough to bypass the body's normal filtering, reach deep into the lungs, and pass into the bloodstream. Long term exposure is associated with heart disease, stroke, reduced lung development in children, and shortened life expectancy.
+
+Cities across Asia experience severe seasonal smog, and residents want to know one practical thing: is tomorrow going to be bad?
+
+Pollution monitoring stations are expensive and sparse. Weather forecasts are free, universal, and available days ahead. That gap motivates the question this project answers:
+
+> **Can PM2.5 concentration be predicted from weather conditions alone?**
+
+If it can, any location with a weather forecast could issue an air quality warning without installing a single sensor.
+
+This is a **regression** problem. The target is a continuous concentration in µg/m³.
+
+### Dataset
+
+Hourly measurements from Beijing, 2010 to 2014, pairing PM2.5 readings taken at the US Embassy with meteorological data from Beijing Capital International Airport.
+
+| Property | Value |
+|---|---|
+| Raw records | 43,824 hourly readings |
+| Records after cleaning | 41,757 |
+| Features | 9 raw, expanded to 13 after engineering |
+| Target | `pm2.5`, concentration in µg/m³ |
+| Missing values | 2,067, all in the target column |
+
+Beijing was chosen because few cities publish five continuous years of paired pollution and weather data openly. The method transfers to anywhere with comparable records.
+
+**A framing statistic:** 88.1% of hours in this five year record exceeded the WHO 24 hour guideline of 15 µg/m³.
+
+### Cleaning
+
+All 2,067 missing values sat in the target column. These rows were **dropped rather than imputed**, a different decision from the foundation tasks where missing *features* were filled with a median or mode. Imputing a target means inventing the answer and then training the model to reproduce that invention, so every metric would partly measure how well the model copied a fabricated number. Dropping cost 4.7% of the data.
+
+### Feature engineering
+
+Four features were added, each motivated by a physical mechanism rather than by trying combinations at random.
+
+| Feature | Definition | Reasoning |
+|---|---|---|
+| `heating_season` | 15 Nov to 15 Mar | Beijing runs coal fired district heating on a fixed winter schedule. The raw `month` column captures this only indirectly, since the window splits mid month. |
+| `temp_dewp_spread` | `TEMP - DEWP` | Indicates how close air is to saturation. A small spread signals humid, stagnant conditions that trap particulates near ground level. |
+| `is_night` | Before 06:00 or from 20:00 | Overnight cooling forms temperature inversions, a lid of warm air that stops pollution dispersing upward. |
+| `season` | Meteorological season | A coarse grouping for tree models to split on. |
+
+**Deliberate omission:** no lagged PM2.5 features, despite yesterday's pollution being the single strongest available predictor. The project's purpose is forecasting from a *weather forecast*, and a user checking the app in advance has no recent pollution reading to supply. Including lags would have inflated the metrics while producing a model that cannot serve its stated purpose.
+
+### Evaluation strategy
+
+This is time series data, so `train_test_split` with a random shuffle is the wrong tool. Pollution at 3pm closely resembles pollution at 2pm and 4pm. A random split scatters neighbouring hours across train and test, letting the model interpolate between hours it has effectively already seen. No row appears twice, yet the test set is not genuinely unseen.
+
+A **chronological split** was used instead: train on 2010 to 2013, test on all of 2014. Both were computed to make the difference visible:
+
+| Split strategy | R² |
+|---|---|
+| Random shuffle | 0.6207 |
+| Chronological (honest) | **0.5071** |
+
+Random splitting overstated performance by **0.11 R² points**, a larger gap than the difference between the best and worst of the three models tested. All results below use the chronological split.
+
+### Results
+
+| Model | RMSE (µg/m³) | MAE (µg/m³) | R² |
+|---|---|---|---|
+| Linear Regression | 76.93 | 54.41 | 0.3234 |
+| Random Forest | 67.78 | 45.48 | 0.4748 |
+| **XGBoost** | **65.66** | **44.54** | **0.5071** |
+
+Baseline (always predicting the training mean) gives RMSE 93.53 µg/m³, so the selected model reduces error by **29.8%**.
+
+**Top features**
+
+| Rank | Feature | Importance |
+|---|---|---|
+| 1 | `heating_season` | 0.247 |
+| 2 | `season_Winter` | 0.135 |
+| 3 | `temp_dewp_spread` | 0.107 |
+| 4 | `cbwd_NW` (north west wind) | 0.070 |
+
+Two of the four engineered features rank in the top three, including first place. Domain reasoning about Beijing's heating schedule mattered more than any raw weather reading.
+
+**Sanity check**
+
+| Scenario | Predicted PM2.5 | Band |
+|---|---|---|
+| Calm winter night in heating season | 265.7 µg/m³ | Hazardous |
+| Mild autumn day, moderate wind | 50.8 µg/m³ | Unhealthy for Sensitive Groups |
+| Windy summer afternoon with rain | 0.9 µg/m³ | Good |
+
+### Limitations
+
+- **Weather does not create pollution, it disperses or traps it.** The model cannot see traffic, industry, construction, or agricultural burning. The unexplained variance is largely emissions, and no volume of weather data recovers it.
+- **Severe episodes are under predicted.** The residual plot shows the extremes sitting below the diagonal. Multi day smog builds up under sustained stagnation, and a model seeing only the current hour cannot represent that accumulation. These are exactly the days a warning system exists to flag.
+- **No accumulation history**, by the deliberate design choice explained above.
+- **Beijing specific.** The model learned one city's emission profile and terrain. The method transfers; these coefficients do not.
+- **Data ends in 2014.** Air quality policy has changed substantially since.
+
+### Next steps
+
+1. Add lagged pollution features for a same day nowcasting variant, keeping the weather only model for genuine forecasting.
+2. Reframe as classification over air quality bands, since users act on "should I go outside" rather than on a precise number.
+3. Model log PM2.5 or weight training toward high pollution hours, to reduce under prediction at the extremes.
+4. Retrain on recent data for a specific city using the same pipeline.
+
+A longer discussion of the real world value and limits of this project is in [`CASE_STUDY.md`](CASE_STUDY.md).
+
+---
+
+# Foundation Tasks 1 to 10
+
+The ten assigned tasks that built up to the capstone.
 
 ---
 
@@ -319,7 +454,7 @@ SMOTE was applied inside an `imblearn` pipeline so it runs during fitting only. 
 
 **Notebook:** `Task_10_Model_Deployment_Streamlit.ipynb` | **Files:** `app.py`, `titanic_pipeline.joblib`, `requirements.txt`
 
-**Live app:** _coming soon, deployment in progress_
+**Live app:** https://badarrao-titanic-predictor.streamlit.app/
 
 The Task 7 Titanic pipeline was selected for deployment, and not only on performance. It accepts **raw passenger details** and handles imputation, scaling, and encoding internally, so the app passes user input straight in without reproducing any preprocessing logic.
 
@@ -343,6 +478,7 @@ The alternatives were poor fits for a web interface: the Task 9 fraud model requ
 | 8 | Telco churn | Random Forest / XGBoost | ROC AUC 0.8409 / 0.8397 |
 | 9 | Credit card fraud | Logistic Regression + threshold tuning | 87/98 frauds caught, F1 0.6214 |
 | 10 | Deployment | Task 7 pipeline | Live Streamlit app |
+| Capstone | Beijing PM2.5 from weather | XGBoost | R² 0.5071, RMSE 65.66 µg/m³ |
 
 ---
 
@@ -357,6 +493,10 @@ The alternatives were poor fits for a web interface: the Task 9 fraud model requ
 **Feature engineering can beat algorithm selection.** Four engineered Titanic features moved cross-validated accuracy by 3.5 points, more than switching model families achieved on other tasks.
 
 **Improvements must be weighed against noise.** A +0.0016 F1 change on 179 test rows is not an improvement. Cross-validation standard deviations are what make that judgement possible.
+
+**How you evaluate can matter more than what you train.** In the capstone, switching from a random split to a chronological one moved R² by 0.11, a larger swing than the gap between the best and worst model tested. On time series data the split strategy is not a detail.
+
+**Domain knowledge can outrank the data itself.** The capstone's most important feature was a hand built flag for Beijing's coal heating season, which beat every raw weather measurement available.
 
 **Metric changes hide costs.** Recall rising from 0.64 to 0.92 in fraud detection came with 1,373 additional false alarms. Reporting the counts alongside the percentages is what keeps the claim honest.
 
@@ -377,13 +517,13 @@ pip install -r requirements.txt
 jupyter notebook
 ```
 
-**Running the Streamlit app locally**
+**Running either Streamlit app locally**
 
 ```bash
-streamlit run app.py
+streamlit run capstone_app.py   # Air Quality Forecaster
+streamlit run app.py            # Titanic Survival Predictor
 ```
 
-Opens at `http://localhost:8501`.
+Each opens at `http://localhost:8501`.
 
-## App link
-https://badarrao-titanic-predictor.streamlit.app/
+Note that `requirements.txt` is shared by both apps. It is a superset covering the capstone's XGBoost dependency as well as everything the Titanic app needs.
