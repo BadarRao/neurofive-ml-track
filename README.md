@@ -4,7 +4,7 @@ Machine learning internship track with NeuroFive Solutions. Ten foundation tasks
 
 Every result in this README comes from actually running the notebooks. No metric is estimated.
 
-Certification: Machine Learning Fundamentals Internship, NeuroFive Solutions, July 2026 Cohort. Certificate ID 26071033, verifiable at neurofivesolutions.com/verify.
+Certification: Machine Learning Fundamentals Internship, NeuroFive Solutions, July 2026 Cohort. Certificate ID NFS-2607-1033, verifiable at neurofivesolutions.com/verify.
 
 Live Apps
 App	Description	Link
